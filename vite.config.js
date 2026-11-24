@@ -329,9 +329,14 @@ export default defineConfig({
                 fetchHeaders['Range'] = req.headers.range;
               }
 
+              const controller = new AbortController();
+              req.on('close', () => {
+                try { controller.abort(); } catch (e) {}
+              });
+
               const upstream = await fetch(audioUrl, {
                 headers: fetchHeaders,
-                signal: AbortSignal.timeout(30000)
+                signal: controller.signal
               });
 
               res.statusCode = upstream.status;
@@ -352,7 +357,10 @@ export default defineConfig({
 
               if (upstream.body) {
                 const stream = Readable.fromWeb(upstream.body);
-                req.on('close', () => {
+                stream.on('error', () => {
+                  // Previne encerramento do processo em caso de interrupção ou seek
+                });
+                res.on('error', () => {
                   try { stream.destroy(); } catch (e) {}
                 });
                 stream.pipe(res);
