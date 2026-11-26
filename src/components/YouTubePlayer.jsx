@@ -1,201 +1,155 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 
-export default function YouTubePlayer({
-  videoId,
-  isPlaying,
-  volume,
-  isMuted,
-  seekTime,
-  showVideo,
-  onTimeUpdate,
-  onEnded,
-  onError,
-  onReady
-}) {
-  const containerRef = useRef(null);
-  const playerRef = useRef(null);
-  const isReadyRef = useRef(false);
-  const intervalRef = useRef(null);
-  const hasEndedTriggeredRef = useRef(false);
-  const [apiLoaded, setApiLoaded] = useState(false);
+/**
+ * Exibe o clipe do YouTube como acompanhamento visual.
+ *
+ * O áudio sempre vem do <audio> principal (/api/stream). O vídeo fica mudo e
+ * segue o tempo do áudio; assim não há som duplicado nem dois eventos de
+ * "fim da música" (que antes faziam o player pular duas faixas).
+ */
 
-  // Armazena callbacks em refs para evitar closures obsoletas
-  const onEndedRef = useRef(onEnded);
-  const onTimeUpdateRef = useRef(onTimeUpdate);
-  const onErrorRef = useRef(onError);
-  const onReadyRef = useRef(onReady);
+const SYNC_INTERVAL_MS = 500;
+const DRIFT_TOLERANCE_S = 1.2;
 
-  useEffect(() => { onEndedRef.current = onEnded; }, [onEnded]);
-  useEffect(() => { onTimeUpdateRef.current = onTimeUpdate; }, [onTimeUpdate]);
-  useEffect(() => { onErrorRef.current = onError; }, [onError]);
-  useEffect(() => { onReadyRef.current = onReady; }, [onReady]);
+let apiPromise = null;
 
-  // 1. Carrega o script da API do YouTube IFrame uma única vez
-  useEffect(() => {
-    if (window.YT && window.YT.Player) {
-      setApiLoaded(true);
-      return;
-    }
+function loadYouTubeApi() {
+  if (window.YT && window.YT.Player) return Promise.resolve(window.YT);
+  if (apiPromise) return apiPromise;
 
-    const existingScript = document.getElementById('yt-iframe-api-script');
-    if (!existingScript) {
+  apiPromise = new Promise((resolve, reject) => {
+    const previousCallback = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = () => {
+      if (typeof previousCallback === 'function') previousCallback();
+      resolve(window.YT);
+    };
+
+    if (!document.getElementById('yt-iframe-api-script')) {
       const tag = document.createElement('script');
       tag.id = 'yt-iframe-api-script';
       tag.src = 'https://www.youtube.com/iframe_api';
-      const firstScriptTag = document.getElementsByTagName('script')[0];
-      firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+      tag.async = true;
+      tag.onerror = () => {
+        apiPromise = null;
+        tag.remove();
+        reject(new Error('Não foi possível carregar a API do YouTube'));
+      };
+      document.head.appendChild(tag);
     }
+  });
 
-    const prevOnReady = window.onYouTubeIframeAPIReady;
-    window.onYouTubeIframeAPIReady = () => {
-      if (typeof prevOnReady === 'function') prevOnReady();
-      setApiLoaded(true);
-    };
+  return apiPromise;
+}
+
+export default function YouTubePlayer({ videoId, isPlaying, getMasterTime, showVideo = true, onError }) {
+  const hostRef = useRef(null);
+  const playerRef = useRef(null);
+  const readyRef = useRef(false);
+  const latestRef = useRef({ videoId, isPlaying, getMasterTime, onError });
+
+  useEffect(() => {
+    latestRef.current = { videoId, isPlaying, getMasterTime, onError };
+  });
+
+  // Mantém o vídeo igual ao áudio: mesmo videoId, play/pause e posição
+  const sync = useCallback(() => {
+    const player = playerRef.current;
+    if (!player || !readyRef.current) return;
+    const { videoId: wantedId, isPlaying: shouldPlay, getMasterTime: masterTime } = latestRef.current;
+
+    try {
+      const master = masterTime?.();
+      const loadedId = player.getVideoData?.()?.video_id;
+      if (wantedId && loadedId && loadedId !== wantedId) {
+        const startSeconds = Number.isFinite(master) ? master : 0;
+        if (shouldPlay) player.loadVideoById({ videoId: wantedId, startSeconds });
+        else player.cueVideoById({ videoId: wantedId, startSeconds });
+        return;
+      }
+
+      const state = player.getPlayerState(); // 1 = tocando, 2 = pausado, 3 = carregando
+      if (shouldPlay && state !== 1 && state !== 3) player.playVideo();
+      else if (!shouldPlay && (state === 1 || state === 3)) player.pauseVideo();
+
+      if (Number.isFinite(master) && state !== 3) {
+        const drift = Math.abs(player.getCurrentTime() - master);
+        if (drift > DRIFT_TOLERANCE_S) player.seekTo(master, true);
+      }
+    } catch {
+      // player ainda inicializando
+    }
   }, []);
 
-  // 2. Inicializa ou atualiza o player quando videoId e API estão prontos
+  // Cria o player uma única vez
   useEffect(() => {
-    if (!apiLoaded || !containerRef.current || !videoId) return;
+    const host = hostRef.current;
+    // O YT.Player substitui o elemento recebido por um <iframe>; usamos um elemento
+    // criado fora do React para não conflitar com a árvore de componentes.
+    const mountPoint = document.createElement('div');
+    host.appendChild(mountPoint);
+    let cancelled = false;
 
-    if (!playerRef.current) {
-      isReadyRef.current = false;
-      playerRef.current = new window.YT.Player(containerRef.current, {
-        height: '100%',
-        width: '100%',
-        videoId: videoId,
-        playerVars: {
-          autoplay: 1,
-          controls: 0,
-          disablekb: 1,
-          fs: 0,
-          modestbranding: 1,
-          rel: 0,
-          iv_load_policy: 3,
-          playsinline: 1,
-          enablejsapi: 1
-        },
-        events: {
-          onReady: (event) => {
-            isReadyRef.current = true;
-            event.target.setVolume(isMuted ? 0 : volume * 100);
-            if (isPlaying) {
-              try {
-                event.target.playVideo();
-              } catch (e) {
-                console.warn('playVideo erro em onReady:', e);
-              }
-            }
-            if (onReadyRef.current) onReadyRef.current();
+    loadYouTubeApi()
+      .then((YT) => {
+        if (cancelled) return;
+        playerRef.current = new YT.Player(mountPoint, {
+          height: '100%',
+          width: '100%',
+          videoId: latestRef.current.videoId,
+          playerVars: {
+            autoplay: 1,
+            mute: 1,
+            controls: 0,
+            disablekb: 1,
+            fs: 0,
+            modestbranding: 1,
+            rel: 0,
+            iv_load_policy: 3,
+            playsinline: 1,
+            enablejsapi: 1,
+            origin: window.location.origin
           },
-          onStateChange: (event) => {
-            // 0 = ENDED, 1 = PLAYING, 2 = PAUSED
-            if (event.data === 0) {
-              if (!hasEndedTriggeredRef.current) {
-                hasEndedTriggeredRef.current = true;
-                if (onEndedRef.current) onEndedRef.current();
-              }
-            } else if (event.data === 1) {
-              hasEndedTriggeredRef.current = false;
-            }
-          },
-          onError: (event) => {
-            console.warn('Erro no player do YouTube:', event.data);
-            if (onErrorRef.current) {
-              onErrorRef.current(event.data);
+          events: {
+            onReady: (event) => {
+              readyRef.current = true;
+              event.target.mute();
+              sync();
+            },
+            onError: (event) => {
+              latestRef.current.onError?.(event.data);
             }
           }
-        }
+        });
+      })
+      .catch((err) => {
+        console.warn(err.message);
+        latestRef.current.onError?.('api');
       });
-    } else if (isReadyRef.current) {
-      // Player já existe e está pronto: apenas carrega o novo vídeo
-      hasEndedTriggeredRef.current = false;
-      try {
-        playerRef.current.loadVideoById(videoId);
-        playerRef.current.setVolume(isMuted ? 0 : volume * 100);
-        if (isPlaying) {
-          playerRef.current.playVideo();
-        }
-      } catch (e) {
-        console.warn('loadVideoById erro:', e);
-      }
-    }
-  }, [apiLoaded, videoId]);
 
-  // 3. Sincroniza Play/Pause
-  useEffect(() => {
-    const player = playerRef.current;
-    if (player && isReadyRef.current && typeof player.getPlayerState === 'function') {
-      try {
-        const state = player.getPlayerState();
-        if (isPlaying && state !== 1 && state !== 3) {
-          player.playVideo();
-        } else if (!isPlaying && state === 1) {
-          player.pauseVideo();
-        }
-      } catch (e) {
-        console.warn('Play/Pause erro:', e);
-      }
-    }
-  }, [isPlaying]);
-
-  // 4. Sincroniza Volume e Mudo
-  useEffect(() => {
-    const player = playerRef.current;
-    if (player && isReadyRef.current && typeof player.setVolume === 'function') {
-      try {
-        player.setVolume(isMuted ? 0 : volume * 100);
-      } catch (e) {}
-    }
-  }, [volume, isMuted]);
-
-  // 5. Sincroniza Seek (pular para tempo)
-  useEffect(() => {
-    const player = playerRef.current;
-    if (player && isReadyRef.current && typeof player.seekTo === 'function' && seekTime !== null && seekTime !== undefined) {
-      hasEndedTriggeredRef.current = false;
-      try {
-        player.seekTo(seekTime, true);
-      } catch (e) {}
-    }
-  }, [seekTime]);
-
-  // 6. Loop de atualização de tempo (letras e progresso)
-  useEffect(() => {
-    if (intervalRef.current) clearInterval(intervalRef.current);
-
-    intervalRef.current = setInterval(() => {
-      const player = playerRef.current;
-      if (
-        player &&
-        isReadyRef.current &&
-        typeof player.getCurrentTime === 'function' &&
-        typeof player.getDuration === 'function'
-      ) {
-        try {
-          const current = player.getCurrentTime();
-          const dur = player.getDuration();
-          if (!isNaN(current) && !isNaN(dur) && dur > 0) {
-            if (onTimeUpdateRef.current) {
-              onTimeUpdateRef.current(current, dur);
-            }
-
-            if (dur > 10 && current >= dur - 0.5 && !hasEndedTriggeredRef.current) {
-              hasEndedTriggeredRef.current = true;
-              if (onEndedRef.current) onEndedRef.current();
-            }
-          }
-        } catch (e) {}
-      }
-    }, 200);
+    const interval = setInterval(sync, SYNC_INTERVAL_MS);
 
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      cancelled = true;
+      clearInterval(interval);
+      readyRef.current = false;
+      try {
+        playerRef.current?.destroy();
+      } catch {
+        // já destruído
+      }
+      playerRef.current = null;
+      host.replaceChildren();
     };
-  }, []);
+  }, [sync]);
+
+  // Reage na hora a play/pause e troca de vídeo (o intervalo cobre o resto)
+  useEffect(() => {
+    sync();
+  }, [sync, videoId, isPlaying]);
 
   return (
     <div className={`yt-player-wrapper ${showVideo ? 'visible-video' : 'hidden-video'}`}>
-      <div ref={containerRef} id="yt-player-embed" />
+      <div ref={hostRef} id="yt-player-embed" style={{ width: '100%', height: '100%' }} />
     </div>
   );
 }

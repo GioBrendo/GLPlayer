@@ -1,19 +1,21 @@
 import React, { useState } from 'react';
-import { 
-  X, 
-  Users, 
-  Radio, 
-  Copy, 
-  Check, 
-  Share2, 
-  LogOut, 
-  Sparkles, 
-  Heart, 
-  Flame, 
-  PartyPopper, 
-  Music,
-  SmilePlus
-} from 'lucide-react';
+import { X, Users, Radio, Copy, Check, LogOut, Sparkles } from 'lucide-react';
+import { loadString, saveString } from '../utils/storage';
+
+const ROOM_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sem 0/O e 1/I para não confundir
+
+function generateRoomCode() {
+  const bytes = new Uint8Array(6);
+  crypto.getRandomValues(bytes);
+  return 'JAM' + Array.from(bytes, (b) => ROOM_CODE_CHARS[b % ROOM_CODE_CHARS.length]).join('');
+}
+
+/** Aceita o código puro ou o link de convite inteiro (…?room=XYZ). */
+function extractRoomCode(value) {
+  const fromLink = value.match(/[?&]room=([A-Za-z0-9]+)/);
+  const raw = fromLink ? fromLink[1] : value;
+  return raw.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 16);
+}
 
 export default function JamModal({
   isOpen,
@@ -24,11 +26,13 @@ export default function JamModal({
   onLeaveRoom,
   onSendReaction
 }) {
-  const [tab, setTab] = useState('create'); // 'create' | 'join'
-  const [roomCodeInput, setRoomCodeInput] = useState('');
-  const [usernameInput, setUsernameInput] = useState(() => {
-    return localStorage.getItem('jblgplayer_username') || localStorage.getItem('soundwave_username') || 'Amigo ' + Math.floor(Math.random() * 900 + 100);
-  });
+  // Convite recebido pelo link (?room=XYZ): já abre na aba "Entrar" com o código preenchido
+  const [inviteCode] = useState(() => extractRoomCode(new URLSearchParams(window.location.search).get('room') || ''));
+  const [tab, setTab] = useState(inviteCode ? 'join' : 'create'); // 'create' | 'join'
+  const [roomCodeInput, setRoomCodeInput] = useState(inviteCode);
+  const [usernameInput, setUsernameInput] = useState(
+    () => loadString('username') || 'Amigo ' + Math.floor(Math.random() * 900 + 100)
+  );
   const [copied, setCopied] = useState(false);
 
   if (!isOpen) return null;
@@ -66,20 +70,22 @@ export default function JamModal({
     }
   };
 
+  const cleanUsername = () => usernameInput.trim().slice(0, 32) || 'Amigo';
+
   const handleCreate = (e) => {
     e.preventDefault();
-    const newCode = 'JAM' + Math.floor(Math.random() * 9000 + 1000);
-    localStorage.setItem('jblgplayer_username', usernameInput);
-    localStorage.setItem('soundwave_username', usernameInput);
-    onJoinRoom(newCode, usernameInput);
+    const name = cleanUsername();
+    saveString('username', name);
+    onJoinRoom(generateRoomCode(), name);
   };
 
   const handleJoin = (e) => {
     e.preventDefault();
-    if (!roomCodeInput.trim()) return;
-    localStorage.setItem('jblgplayer_username', usernameInput);
-    localStorage.setItem('soundwave_username', usernameInput);
-    onJoinRoom(roomCodeInput.trim().toUpperCase(), usernameInput);
+    const code = extractRoomCode(roomCodeInput);
+    if (code.length < 3) return;
+    const name = cleanUsername();
+    saveString('username', name);
+    onJoinRoom(code, name);
   };
 
   const reactions = ['❤️', '🔥', '🎉', '👏', '🎵', '⚡'];
@@ -140,12 +146,15 @@ export default function JamModal({
                 <span>Ouvintes na Sala ({jamUsers.length || 1}):</span>
               </div>
               <div className="listeners-chips-list">
-                {jamUsers.map((name, idx) => (
-                  <span key={idx} className="listener-chip">
-                    <span className="listener-avatar">{name.charAt(0).toUpperCase()}</span>
-                    <span className="listener-name">{name}</span>
-                  </span>
-                ))}
+                {jamUsers.map((name, idx) => {
+                  const label = String(name || 'Amigo');
+                  return (
+                    <span key={idx} className="listener-chip">
+                      <span className="listener-avatar">{label.charAt(0).toUpperCase()}</span>
+                      <span className="listener-name">{label}</span>
+                    </span>
+                  );
+                })}
               </div>
             </div>
 
@@ -242,10 +251,9 @@ export default function JamModal({
                     value={roomCodeInput}
                     onChange={(e) => {
                       // Se colou o link completo, extrai o código
-                      const val = e.target.value;
-                      const match = val.match(/room=([a-zA-Z0-9]+)/);
-                      setRoomCodeInput(match ? match[1] : val);
+                      setRoomCodeInput(extractRoomCode(e.target.value));
                     }}
+                    maxLength={300}
                     required
                     autoFocus
                   />
@@ -255,7 +263,7 @@ export default function JamModal({
                   <button type="button" className="btn-cancel" onClick={onClose}>
                     Cancelar
                   </button>
-                  <button type="submit" className="btn-primary" disabled={!roomCodeInput.trim()}>
+                  <button type="submit" className="btn-primary" disabled={roomCodeInput.length < 3}>
                     <Users size={16} />
                     <span>Entrar e Sincronizar</span>
                   </button>

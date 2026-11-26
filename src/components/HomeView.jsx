@@ -1,12 +1,12 @@
 import React from 'react';
-import { Play, Mic2, Sparkles } from 'lucide-react';
+import { Play, Pause, Mic2, Sparkles } from 'lucide-react';
 import TrackCard from './TrackCard';
 
 export default function HomeView({
   tracks = [],
   currentTrack,
   isPlaying,
-  favorites = [],
+  favoriteIds = new Set(),
   onPlayTrack,
   onOpenLyrics,
   onToggleFavorite,
@@ -15,6 +15,7 @@ export default function HomeView({
 }) {
   const songsWithLyrics = tracks.filter((t) => t.hasLyrics);
   const featuredSong = songsWithLyrics[0] || tracks[0];
+  const isFeaturedPlaying = isPlaying && currentTrack?.id === featuredSong?.id;
 
   return (
     <div className="home-view">
@@ -39,10 +40,10 @@ export default function HomeView({
             <div className="hero-actions">
               <button 
                 className="hero-play-btn"
-                onClick={() => onPlayTrack(featuredSong)}
+                onClick={() => onPlayTrack(featuredSong, tracks)}
               >
-                <Play size={20} fill="currentColor" />
-                <span>Ouvir Completa</span>
+                {isFeaturedPlaying ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
+                <span>{isFeaturedPlaying ? 'Pausar' : 'Ouvir Completa'}</span>
               </button>
 
               {featuredSong.hasLyrics && (
@@ -94,8 +95,8 @@ export default function HomeView({
                 track={track}
                 isCurrent={currentTrack?.id === track.id}
                 isPlaying={isPlaying}
-                isFavorite={favorites.some((f) => f.id === track.id)}
-                onPlay={onPlayTrack}
+                isFavorite={favoriteIds.has(track.id)}
+                onPlay={(t) => onPlayTrack(t, songsWithLyrics)}
                 onToggleFavorite={onToggleFavorite}
                 onOpenLyrics={onOpenLyrics}
                 onAddToPlaylist={onAddToPlaylist}

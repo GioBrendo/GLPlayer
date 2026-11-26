@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { 
   Play, 
   Pause, 
@@ -29,8 +29,6 @@ export default function PlayerBar({
   isFavorite,
   isLyricsOpen,
   showVideo,
-  activeJamRoomId = null,
-  jamUserCount = 0,
   onTogglePlay,
   onSeek,
   onPrev,
@@ -40,13 +38,10 @@ export default function PlayerBar({
   onToggleFavorite,
   onToggleLyrics,
   onToggleVideo,
-  onOpenJam,
   onChangeVolume,
   onToggleMute,
   onToggleFullscreen
 }) {
-  const [isHoveringProgress, setIsHoveringProgress] = useState(false);
-
   if (!currentTrack) {
     return (
       <footer className="player-bar empty-player">
@@ -55,20 +50,19 @@ export default function PlayerBar({
     );
   }
 
-  const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
+  const progressPercent = duration > 0 ? Math.min(100, Math.max(0, (currentTime / duration) * 100)) : 0;
 
   const handleSliderChange = (e) => {
+    if (!(duration > 0)) return;
     const newTime = (parseFloat(e.target.value) / 100) * duration;
     onSeek(newTime);
   };
 
-  const getVolumeIcon = () => {
-    if (isMuted || volume === 0) return VolumeX;
-    if (volume < 0.5) return Volume1;
-    return Volume2;
-  };
-
-  const VolumeIcon = getVolumeIcon();
+  const volumeIcon = isMuted || volume === 0
+    ? <VolumeX size={20} />
+    : volume < 0.5
+      ? <Volume1 size={20} />
+      : <Volume2 size={20} />;
 
   return (
     <footer className="player-bar">
@@ -165,11 +159,7 @@ export default function PlayerBar({
         </div>
 
         {/* Progress Bar */}
-        <div 
-          className="progress-container"
-          onMouseEnter={() => setIsHoveringProgress(true)}
-          onMouseLeave={() => setIsHoveringProgress(false)}
-        >
+        <div className="progress-container">
           <span className="time-display current-time">{formatTime(currentTime)}</span>
           <div className="slider-track-wrap">
             <input 
@@ -177,9 +167,11 @@ export default function PlayerBar({
               min="0" 
               max="100" 
               step="0.1"
-              value={isNaN(progressPercent) ? 0 : progressPercent} 
+              value={progressPercent}
               onChange={handleSliderChange}
               className="progress-slider"
+              aria-label="Posição da música"
+              disabled={!(duration > 0)}
             />
             <div 
               className="progress-fill" 
@@ -219,7 +211,7 @@ export default function PlayerBar({
             onClick={onToggleMute}
             title={isMuted ? 'Ativar som (M)' : 'Mudo (M)'}
           >
-            <VolumeIcon size={20} />
+            {volumeIcon}
           </button>
           <input 
             type="range" 
@@ -229,6 +221,7 @@ export default function PlayerBar({
             value={isMuted ? 0 : volume} 
             onChange={(e) => onChangeVolume(parseFloat(e.target.value))}
             className="volume-slider"
+            aria-label="Volume"
           />
         </div>
 

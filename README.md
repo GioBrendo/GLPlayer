@@ -26,19 +26,21 @@
 - 🎤 **Modo Letras & Karaoke Sincronizado (.LRC):**
   - Sincronização linha por linha em tempo real com destaque visual e rolagem automática suave.
   - **Modo Palco (Stage Mode):** Interface imersiva estilo estúdio com tipografia gigante e exibição da próxima linha.
-  - Ajuste de sincronia fino milissegundo a milissegundo (+ / - offset).
+  - Ajuste fino de sincronia em passos de 0,5 s (+ / - offset), e suporte à tag `[offset:]` dos arquivos `.lrc`.
   - Busca automática online de letras e importação/exportação de arquivos `.lrc` personalizados.
 
 - 👥 **Ouvir Juntos (Jam Session em Tempo Real):**
   - Servidor WebSocket integrado (`/ws-jam`) para sincronizar reprodução entre múltiplos amigos simultaneamente.
   - Sincronização instantânea de Play/Pause, Seek (pulo de tempo) e troca de faixa.
-  - Reações flutuantes animadas em tempo real com emojis (🔥, ❤️, 🎵, 👏, 🎉, 🚀).
+  - Reações flutuantes animadas em tempo real com emojis (❤️, 🔥, 🎉, 👏, 🎵, ⚡).
+  - Link de convite (`?room=CÓDIGO`) já abre a sala com o código preenchido; reconexão automática se a rede cair.
 
 - 📂 **Gestão de Playlists & Importação Inteligente:**
   - Importação de playlists públicas do **Spotify** via links.
   - Importação de playlists do **YouTube**.
   - Criação, edição e exclusão de playlists locais com persistência em `LocalStorage`.
-  - Upload de arquivos de áudio locais (`.mp3`, `.m4a`, `.wav`) e arquivos `.lrc` arrastando e soltando.
+  - Upload de arquivos de áudio locais (`.mp3`, `.m4a`, `.wav`, `.ogg`, `.flac`…), vários de uma vez, e arquivos `.lrc`.
+  - Arquivos locais tocam só na sessão atual (o navegador não guarda o arquivo depois de recarregar a página).
 
 - 🎨 **Design AMOLED Cyber Dark:**
   - Paleta escura profunda `#0a0b0e` com detalhes em verde ciano neon (`#10b981` / `#00e599`).
@@ -71,14 +73,29 @@ cd JBLGPlayer
 npm install
 ```
 
-3. Inicie o servidor com suporte a rede local:
+3. Inicie o servidor (já escuta na rede local):
 ```bash
-npm run dev -- --host
+npm run dev
 ```
+
+   Para testar a versão de produção com o mesmo backend: `npm run build && npm run preview` (porta 4173).
 
 4. Acesse no navegador:
 - **No próprio computador:** [http://localhost:5173](http://localhost:5173)
 - **No celular ou outros aparelhos na mesma rede Wi-Fi:** `http://SEU_IP_LOCAL:5173` (ex: `http://192.168.1.6:5173`)
+
+> ⚠️ O servidor fica acessível para qualquer aparelho da rede e executa o `yt-dlp` sob demanda. Use apenas em redes confiáveis (casa, não Wi-Fi público).
+
+### ⌨️ Atalhos de Teclado
+
+| Tecla | Ação |
+| --- | --- |
+| `Espaço` | Tocar / pausar |
+| `←` / `→` | Voltar / avançar 5 segundos |
+| `Shift` + `←` / `→` | Música anterior / próxima |
+| `M` | Mudo |
+| `L` | Abrir / fechar letras |
+| `Esc` | Fechar janela ou letras |
 
 ---
 
@@ -92,20 +109,24 @@ music-player/
 │   │   ├── LyricsView.jsx        # Visualizador de letras sincronizadas e Modo Palco
 │   │   ├── JamModal.jsx          # Salas de escuta sincronizada via WebSocket
 │   │   ├── Sidebar.jsx           # Navegação lateral, playlists e atalhos de importação
-│   │   ├── TrackList.jsx         # Tabela de faixas com drag-and-drop e status
+│   │   ├── TrackList.jsx         # Tabela/grade de faixas com filtro e ordenação
 │   │   ├── OnlineSearch.jsx      # Busca integrada com pré-resolução de áudio
 │   │   └── YouTubePlayer.jsx     # Visualizador de clipe sob demanda
 │   ├── utils/
 │   │   ├── lrcParser.js          # Parser de tempo e linhas LRC
-│   │   ├── jamSocket.js          # Cliente WebSocket para as salas Jam
-│   │   └── lyricsApi.js          # Integração de busca de letras abertas
+│   │   ├── jamSocket.js          # Cliente WebSocket para as salas Jam (com reconexão)
+│   │   ├── itunesApi.js          # Busca no catálogo do iTunes e resolução de vídeo
+│   │   ├── lyricsApi.js          # Integração de busca de letras abertas
+│   │   └── storage.js            # Persistência no LocalStorage (com migração de chaves antigas)
 │   ├── data/
 │   │   ├── defaultPlaylists.js   # Playlists predefinidas
 │   │   └── tracks.js             # Biblioteca inicial com metadados
 │   ├── App.jsx                   # Orquestrador de estado global, áudio HTML5 e eventos
 │   └── App.css                   # Sistema de design AMOLED com gradientes e animações
+├── server/
+│   └── backend.js                # /api/stream, /api/yt-search, importações e /ws-jam
 ├── lyrics/                       # Arquivos de exemplo de letras sincronizadas (.lrc)
-├── vite.config.js                # Middlewares backend: /api/stream, /api/yt-search e /ws-jam
+├── vite.config.js                # Liga o backend no `npm run dev` e no `npm run preview`
 └── package.json
 ```
 

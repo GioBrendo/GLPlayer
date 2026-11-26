@@ -1,6 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { X, Sparkles, Image, Music, Link2, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { X, Sparkles, Music, Link2, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import YoutubeIcon from './YoutubeIcon';
+
+/** Lê a resposta como JSON mesmo quando o servidor devolve texto/HTML de erro. */
+async function readJsonResponse(res) {
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(
+      res.ok
+        ? 'Resposta inválida do servidor.'
+        : `O servidor respondeu com erro ${res.status}. O player está rodando com "npm run dev"?`
+    );
+  }
+}
 
 export default function PlaylistModal({
   isOpen,
@@ -84,7 +98,7 @@ export default function PlaylistModal({
 
     try {
       const res = await fetch(`/api/spotify-import?url=${encodeURIComponent(spotifyUrl.trim())}`);
-      const data = await res.json();
+      const data = await readJsonResponse(res);
 
       if (!res.ok || !data.success) {
         throw new Error(data.error || 'Não foi possível importar este link do Spotify.');
@@ -114,7 +128,7 @@ export default function PlaylistModal({
 
     try {
       const res = await fetch(`/api/youtube-import?url=${encodeURIComponent(youtubeUrl.trim())}`);
-      const data = await res.json();
+      const data = await readJsonResponse(res);
 
       if (!res.ok || !data.success) {
         throw new Error(data.error || 'Não foi possível importar este link do YouTube.');
@@ -363,7 +377,7 @@ export default function PlaylistModal({
                 />
               </div>
               <span className="form-helper-text">
-                Formatos aceitos: <code>https://open.spotify.com/album/[ID]</code> ou <code>https://open.spotify.com/playlist/[ID]</code>
+                Formatos aceitos: <code>https://open.spotify.com/album/[ID]</code>, <code>/playlist/[ID]</code> ou <code>/track/[ID]</code>
               </span>
             </div>
 

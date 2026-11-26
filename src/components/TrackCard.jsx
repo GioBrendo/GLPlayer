@@ -1,5 +1,6 @@
 import React from 'react';
 import { Play, Pause, Heart, Mic2, Plus } from 'lucide-react';
+import { formatTime } from '../utils/lrcParser';
 
 export default function TrackCard({
   track,
@@ -58,7 +59,7 @@ export default function TrackCard({
         
         <div className="card-bottom-row">
           <span className="card-duration">
-            {Math.floor(track.duration / 60)}:{(track.duration % 60).toString().padStart(2, '0')}
+            {formatTime(track.duration || 0)}
           </span>
 
           <div className="card-actions-right">

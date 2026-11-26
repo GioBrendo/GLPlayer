@@ -2,8 +2,7 @@ import React from 'react';
 import YoutubeIcon from './YoutubeIcon';
 import GLLogo from './GLLogo';
 import { 
-  Home, 
-  Music2, 
+  Home,
   Mic2, 
   Search, 
   Heart, 
@@ -20,8 +19,7 @@ export default function Sidebar({
   setCurrentTab, 
   activePlaylistId,
   playlists = [],
-  favoritesCount, 
-  totalTracks, 
+  favoritesCount,
   isPlaying = false,
   activeJamRoomId = null,
   jamUserCount = 0,
@@ -46,14 +44,17 @@ export default function Sidebar({
   ];
 
   const handleFileChange = (e) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      onLocalAudioUpload(file);
+    const files = Array.from(e.target.files || []);
+    // Limpa o input para permitir escolher o mesmo arquivo de novo
+    e.target.value = '';
+    if (files.length > 0) {
+      onLocalAudioUpload(files);
     }
   };
 
   const handleLrcChange = (e) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (file) {
       onLrcUpload(file);
     }
@@ -209,14 +210,15 @@ export default function Sidebar({
         <input 
           type="file" 
           ref={localInputRef} 
-          accept="audio/*" 
+          accept="audio/*,.mp3,.m4a,.aac,.wav,.ogg,.opus,.flac"
+          multiple
           style={{ display: 'none' }} 
           onChange={handleFileChange} 
         />
         <button 
           className="action-btn"
           onClick={() => localInputRef.current?.click()}
-          title="Tocar qualquer arquivo de áudio do seu computador"
+          title="Tocar arquivos de áudio do seu computador (pode selecionar vários)"
         >
           <FolderPlus size={17} />
           <span>Tocar MP3 do PC</span>

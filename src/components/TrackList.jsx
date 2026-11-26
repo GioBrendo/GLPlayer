@@ -22,7 +22,7 @@ export default function TrackList({
   tracks = [],
   currentTrack,
   isPlaying,
-  favorites = [],
+  favoriteIds = new Set(),
   onPlayTrack,
   onPlayAll,
   onToggleFavorite,
@@ -42,11 +42,8 @@ export default function TrackList({
 
     if (filterQuery.trim()) {
       const q = filterQuery.toLowerCase();
-      result = result.filter(
-        (t) =>
-          t.title.toLowerCase().includes(q) ||
-          t.artist.toLowerCase().includes(q) ||
-          (t.album && t.album.toLowerCase().includes(q))
+      result = result.filter((t) =>
+        [t.title, t.artist, t.album].some((field) => (field || '').toLowerCase().includes(q))
       );
     }
 
@@ -55,9 +52,9 @@ export default function TrackList({
     }
 
     if (sortBy === 'title') {
-      result.sort((a, b) => a.title.localeCompare(b.title));
+      result.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
     } else if (sortBy === 'artist') {
-      result.sort((a, b) => a.artist.localeCompare(b.artist));
+      result.sort((a, b) => (a.artist || '').localeCompare(b.artist || ''));
     }
 
     return result;
@@ -203,8 +200,8 @@ export default function TrackList({
               track={track}
               isCurrent={currentTrack?.id === track.id}
               isPlaying={isPlaying}
-              isFavorite={favorites.some((f) => f.id === track.id)}
-              onPlay={onPlayTrack}
+              isFavorite={favoriteIds.has(track.id)}
+              onPlay={(t) => onPlayTrack(t, filteredTracks)}
               onToggleFavorite={onToggleFavorite}
               onOpenLyrics={onOpenLyrics}
               onAddToPlaylist={onAddToPlaylist}
@@ -227,13 +224,13 @@ export default function TrackList({
             <tbody>
               {filteredTracks.map((track, idx) => {
                 const isCurrent = currentTrack?.id === track.id;
-                const isFav = favorites.some((f) => f.id === track.id);
+                const isFav = favoriteIds.has(track.id);
 
                 return (
                   <tr
                     key={`${track.id}-${idx}`}
                     className={`table-row ${isCurrent ? 'active-row' : ''}`}
-                    onClick={() => onPlayTrack(track)}
+                    onClick={() => onPlayTrack(track, filteredTracks)}
                   >
                     {/* Index or Play indicator */}
                     <td className="col-index">

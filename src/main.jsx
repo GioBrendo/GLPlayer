@@ -2,6 +2,7 @@ import React, { StrictMode, Component } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
+import { clearSavedLibrary } from './utils/storage'
 
 class ErrorBoundary extends Component {
   constructor(props) {
@@ -14,12 +15,12 @@ class ErrorBoundary extends Component {
   }
 
   componentDidCatch(error, errorInfo) {
-    console.error('SoundWave React Crash:', error, errorInfo);
+    console.error('GL Music React Crash:', error, errorInfo);
   }
 
   handleReset = () => {
-    localStorage.removeItem('soundwave_playlists');
-    localStorage.removeItem('soundwave_custom_tracks');
+    // Antes só apagava as chaves "soundwave_", mas o app lia "glmusic_" primeiro: o reset não fazia nada
+    clearSavedLibrary();
     window.location.reload();
   };
 

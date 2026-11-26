@@ -1,10 +1,9 @@
-import React, { useState } from 'react';
-import { 
-  Search, 
-  Loader2, 
-  Play, 
-  Plus, 
-  Check, 
+import React, { useRef, useState } from 'react';
+import {
+  Search,
+  Loader2,
+  Play,
+  Pause,
   Heart,
   Globe,
   FolderPlus
@@ -14,17 +13,17 @@ import { searchOnlineTracks, resolveYouTubeId } from '../utils/itunesApi';
 export default function OnlineSearch({
   currentTrack,
   isPlaying,
-  favorites = [],
+  favoriteIds = new Set(),
   onPlayTrack,
-  onAddToPlaylist,
   onToggleFavorite,
   onOpenAddToPlaylistModal
 }) {
   const [query, setQuery] = useState('');
+  const [searchedTerm, setSearchedTerm] = useState('');
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
-  const [addedIds, setAddedIds] = useState(new Set());
+  const searchSeqRef = useRef(0);
 
   const quickPicks = [
     'Taylor Swift',
@@ -44,20 +43,21 @@ export default function OnlineSearch({
     const term = (searchTerm || query).trim();
     if (!term) return;
 
+    // Só a busca mais recente pode atualizar a tela (evita resultados antigos por cima dos novos)
+    const seq = ++searchSeqRef.current;
+    const isLatest = () => seq === searchSeqRef.current;
+
     setLoading(true);
     setHasSearched(true);
+    setSearchedTerm(term);
 
     // Se for link do YouTube, consulta endpoint nativo do YouTube
     if (term.includes('youtube.com/') || term.includes('youtu.be/')) {
       try {
         const res = await fetch(`/api/youtube-import?url=${encodeURIComponent(term)}`);
         const data = await res.json();
-        if (data.success) {
-          if (data.type === 'playlist') {
-            setResults(data.playlist.tracks);
-          } else if (data.type === 'track') {
-            setResults([data.track]);
-          }
+        if (data.success && isLatest()) {
+          setResults(data.type === 'playlist' ? data.playlist.tracks : [data.track]);
           setLoading(false);
           return;
         }
@@ -67,40 +67,24 @@ export default function OnlineSearch({
     }
 
     const tracks = await searchOnlineTracks(term, 20);
+    if (!isLatest()) return;
     setResults(tracks);
     setLoading(false);
 
     // Pré-carrega o YouTube ID dos principais resultados em segundo plano para play instantâneo
-    if (tracks.length > 0 && !tracks[0].youtubeId) {
-      resolveYouTubeId(tracks[0].title, tracks[0].artist).then((id) => {
-        if (id) {
-          tracks[0].youtubeId = id;
-          setResults([...tracks]);
+    tracks.slice(0, 2).forEach((track) => {
+      if (track.youtubeId) return;
+      resolveYouTubeId(track.title, track.artist).then((id) => {
+        if (id && isLatest()) {
+          setResults((prev) => prev.map((t) => (t.id === track.id ? { ...t, youtubeId: id } : t)));
         }
       });
-      if (tracks[1] && !tracks[1].youtubeId) {
-        resolveYouTubeId(tracks[1].title, tracks[1].artist).then((id) => {
-          if (id) {
-            tracks[1].youtubeId = id;
-            setResults([...tracks]);
-          }
-        });
-      }
-    }
+    });
   };
 
   const handleKeyDown = (e) => {
     if (e.key === 'Enter') {
       handleSearch();
-    }
-  };
-
-  const handleAdd = (track) => {
-    if (onOpenAddToPlaylistModal) {
-      onOpenAddToPlaylistModal(track);
-    } else {
-      onAddToPlaylist(track);
-      setAddedIds((prev) => new Set([...prev, track.id]));
     }
   };
 
@@ -164,7 +148,7 @@ export default function OnlineSearch({
           </div>
         ) : hasSearched && results.length === 0 ? (
           <div className="search-empty-state">
-            <p>Nenhuma música encontrada para "{query}". Tente outro termo.</p>
+            <p>Nenhuma música encontrada para "{searchedTerm}". Tente outro termo.</p>
           </div>
         ) : (
           results.length > 0 && (
@@ -175,8 +159,8 @@ export default function OnlineSearch({
               <div className="results-grid">
                 {results.map((track, idx) => {
                   const isCurrent = currentTrack?.id === track.id;
-                  const isFav = favorites.some((f) => f.id === track.id);
-                  const isAdded = addedIds.has(track.id);
+                  const isFav = favoriteIds.has(track.id);
+                  const isCurrentPlaying = isCurrent && isPlaying;
 
                   return (
                     <div key={`${track.id}-${idx}`} className={`result-card ${isCurrent ? 'active-result' : ''}`}>
@@ -191,10 +175,14 @@ export default function OnlineSearch({
                         />
                         <button
                           className="result-play-overlay"
-                          onClick={() => onPlayTrack(track)}
-                          title="Tocar música completa"
+                          onClick={() => onPlayTrack(track, results)}
+                          title={isCurrentPlaying ? 'Pausar' : 'Tocar música completa'}
                         >
-                          <Play size={24} fill="currentColor" style={{ marginLeft: '2px' }} />
+                          {isCurrentPlaying ? (
+                            <Pause size={24} fill="currentColor" />
+                          ) : (
+                            <Play size={24} fill="currentColor" style={{ marginLeft: '2px' }} />
+                          )}
                         </button>
                       </div>
 
@@ -206,8 +194,8 @@ export default function OnlineSearch({
 
                       <div className="result-actions">
                         <button
-                          className={`btn-add-playlist ${isAdded ? 'added' : ''}`}
-                          onClick={() => handleAdd(track)}
+                          className="btn-add-playlist"
+                          onClick={() => onOpenAddToPlaylistModal(track)}
                           title="Adicionar à playlist"
                         >
                           <FolderPlus size={15} />
