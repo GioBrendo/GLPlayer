@@ -524,6 +524,28 @@ export default function App() {
       .finally(() => resolvingIdsRef.current.delete(track.id));
   }, [currentId]);
 
+  // Pré-aquece o próximo áudio da fila em segundo plano para a troca de faixa ser instantânea
+  useEffect(() => {
+    const queue = getQueue();
+    const current = currentTrackRef.current;
+    if (!current || queue.length < 2) return;
+    const idx = queue.findIndex((t) => t.id === current.id);
+    if (idx === -1) return;
+    const nextTrack = queue[(idx + 1) % queue.length];
+    if (!nextTrack || isLocalFileTrack(nextTrack)) return;
+
+    const timer = setTimeout(() => {
+      const params = new URLSearchParams();
+      if (nextTrack.youtubeId) params.set('id', nextTrack.youtubeId);
+      const q = buildTrackQuery(nextTrack.title, nextTrack.artist);
+      if (q) params.set('q', q);
+      if (params.toString()) {
+        fetch(`/api/prefetch?${params.toString()}`).catch(() => {});
+      }
+    }, 2500);
+    return () => clearTimeout(timer);
+  }, [currentId, getQueue]);
+
   // ==========================================
   // MEDIA SESSION (teclas de mídia, tela de bloqueio do celular)
   // ==========================================

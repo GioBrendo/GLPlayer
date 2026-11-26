@@ -12,6 +12,9 @@
  *  - /ws-jam              → WebSocket do modo "Ouvir Juntos"
  */
 import { execFile } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { promisify } from 'node:util';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -110,18 +113,53 @@ function streamUrlTtl(url) {
   return 60 * 60 * 1000;
 }
 
+let resolvedCookiesPath = null;
+function getYtCookiesArgs() {
+  if (resolvedCookiesPath === false) return [];
+  if (resolvedCookiesPath) return ['--cookies', resolvedCookiesPath];
+
+  const cookiesFile = process.env.YOUTUBE_COOKIES_FILE?.trim();
+  if (cookiesFile && fs.existsSync(cookiesFile)) {
+    resolvedCookiesPath = cookiesFile;
+    return ['--cookies', resolvedCookiesPath];
+  }
+
+  const rawCookies = process.env.YOUTUBE_COOKIES?.trim();
+  if (rawCookies) {
+    try {
+      const target = path.join(os.tmpdir(), 'jblg-yt-cookies.txt');
+      fs.writeFileSync(target, rawCookies, { encoding: 'utf-8', mode: 0o600 });
+      resolvedCookiesPath = target;
+      return ['--cookies', resolvedCookiesPath];
+    } catch (err) {
+      console.warn('[yt-dlp] falha ao gravar YOUTUBE_COOKIES:', err.message);
+    }
+  }
+
+  resolvedCookiesPath = false;
+  return [];
+}
+
+function isYouTubeBotBlockError(message = '') {
+  return /sign in to confirm|not a bot/i.test(message);
+}
+
 /**
  * Executa o yt-dlp forçando saída em UTF-8 (sem isso, no Windows, títulos com
  * acentos, coreano, japonês etc. chegam corrompidos).
  * Sempre passe as URLs/buscas depois de '--' para que nunca sejam lidas como opções.
  */
 async function runYtDlp(args, timeout) {
-  const { stdout } = await execFileAsync('yt-dlp', ['--no-warnings', '--encoding', 'utf-8', ...args], {
-    timeout,
-    windowsHide: true,
-    maxBuffer: 16 * 1024 * 1024,
-    env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' }
-  });
+  const { stdout } = await execFileAsync(
+    'yt-dlp',
+    ['--no-warnings', '--encoding', 'utf-8', ...getYtCookiesArgs(), ...args],
+    {
+      timeout,
+      windowsHide: true,
+      maxBuffer: 16 * 1024 * 1024,
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' }
+    }
+  );
   return stdout;
 }
 
@@ -278,6 +316,9 @@ async function resolveAudioSource(videoId, query) {
       return { videoId: id, url: await getAudioUrlForVideo(id) };
     } catch (err) {
       console.warn(`[stream] yt-dlp falhou para ${id}:`, err.message);
+      if (isYouTubeBotBlockError(err.message)) {
+        return null;
+      }
     }
   }
 
@@ -363,6 +404,17 @@ async function handleStream(req, res, urlObj) {
     console.warn('[stream] erro:', err.message);
     sendText(res, 500, 'Stream error');
   }
+}
+
+function handlePrefetch(res, urlObj) {
+  const videoId = urlObj.searchParams.get('id');
+  const query = cleanString(urlObj.searchParams.get('q'), MAX_QUERY_LENGTH) || null;
+  if ((!videoId || !VIDEO_ID_RE.test(videoId)) && !query) {
+    sendJson(res, 400, { ok: false });
+    return;
+  }
+  resolveAudioSource(videoId && VIDEO_ID_RE.test(videoId) ? videoId : null, query).catch(() => {});
+  sendJson(res, 202, { ok: true });
 }
 
 async function handleYtSearch(res, urlObj) {
@@ -1358,6 +1410,9 @@ function createApiMiddleware() {
       switch (pathname) {
         case '/api/stream':
           await handleStream(req, res, urlObj);
+          return;
+        case '/api/prefetch':
+          handlePrefetch(res, urlObj);
           return;
         case '/api/yt-search':
           await handleYtSearch(res, urlObj);
