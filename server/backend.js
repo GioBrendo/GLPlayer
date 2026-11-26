@@ -124,11 +124,14 @@ function getYtCookiesArgs() {
     return ['--cookies', resolvedCookiesPath];
   }
 
-  const rawCookies = process.env.YOUTUBE_COOKIES?.trim();
+  const rawCookies = process.env.YOUTUBE_COOKIES_BASE64
+    ? Buffer.from(process.env.YOUTUBE_COOKIES_BASE64.trim(), 'base64').toString('utf-8')
+    : process.env.YOUTUBE_COOKIES?.trim();
   if (rawCookies) {
     try {
+      const normalized = rawCookies.replace(/\r\n/g, '\n') + '\n';
       const target = path.join(os.tmpdir(), 'jblg-yt-cookies.txt');
-      fs.writeFileSync(target, rawCookies, { encoding: 'utf-8', mode: 0o600 });
+      fs.writeFileSync(target, normalized, { encoding: 'utf-8', mode: 0o600 });
       resolvedCookiesPath = target;
       return ['--cookies', resolvedCookiesPath];
     } catch (err) {
@@ -152,7 +155,7 @@ function isYouTubeBotBlockError(message = '') {
 async function runYtDlp(args, timeout) {
   const { stdout } = await execFileAsync(
     'yt-dlp',
-    ['--no-warnings', '--encoding', 'utf-8', ...getYtCookiesArgs(), ...args],
+    ['--no-warnings', '--encoding', 'utf-8', '--js-runtimes', `node:${process.execPath}`, ...getYtCookiesArgs(), ...args],
     {
       timeout,
       windowsHide: true,
@@ -275,7 +278,7 @@ function getAudioUrlForVideo(videoId, { fresh = false } = {}) {
   return dedupe(`url:${videoId}`, async () => {
     const stdout = await runYtDlp(
       ['--no-playlist', '-f', 'bestaudio[ext=m4a]/bestaudio', '-g', '--', `https://www.youtube.com/watch?v=${videoId}`],
-      20000
+      30000
     );
     const url = stdout.trim().split('\n')[0];
     if (!url || !url.startsWith('http')) {
